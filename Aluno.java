@@ -23,6 +23,7 @@ public class Aluno {
         materias[1] = new Materia("Programação de Soluções Computacionais", "Hissamu shirado", 60, 90.0, 96.0);
     }
 
+
     public boolean autenticar(String usuario, String senha) {
         return this.usuario.equals(usuario) && this.senha.equals(senha);
     }
