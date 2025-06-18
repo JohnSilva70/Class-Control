@@ -1,18 +1,24 @@
+package sistema;
+
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Scanner;
 
 public class Aluno extends Usuario {
     private String ra;
-    ArrayList<Disciplina> disciplinas;
+    private ArrayList<Disciplina> disciplinas;
 
     public Aluno(String nome, String login, String senha, String email, String dataNascimento, String ra) {
         super(nome, login, senha, email, dataNascimento);
         this.ra = ra;
         this.disciplinas = new ArrayList<>();
     }
+
     public String getRa() {
         return ra;
     }
+
     public ArrayList<Disciplina> getDisciplinas() {
         return disciplinas;
     }
@@ -22,6 +28,7 @@ public class Aluno extends Usuario {
             disciplinas.add(d);
         }
     }
+
     public void listarDisciplinas() {
         if (disciplinas.isEmpty()) {
             System.out.println("📭 Nenhuma disciplina matriculada.");
@@ -32,18 +39,22 @@ public class Aluno extends Usuario {
             }
         }
     }
+
     public void verNotas() {
-        System.out.println("\n--- Minhas Notas ---");
-        boolean temNotas = false;
-        for (Disciplina d : disciplinas) {
-            Double nota = d.getNota(this); // ✅ CORRETO
-            if (nota != null) {
-                System.out.println("- " + d.getNome() + ": " + nota);
-                temNotas = true;
+        System.out.println("\n--- Minhas Notas (Banco) ---");
+
+        try {
+            Map<String, Double> notas = UsuarioDAO.getNotasPorAluno(this.getLogin());
+            if (notas.isEmpty()) {
+                System.out.println("📭 Nenhuma nota lançada ainda.");
+            } else {
+                for (Map.Entry<String, Double> entry : notas.entrySet()) {
+                    System.out.println("- " + entry.getKey() + ": " + entry.getValue());
+                }
             }
-        }
-        if (!temNotas) {
-            System.out.println("📭 Nenhuma nota lançada ainda.");
+        } catch (SQLException e) {
+            System.out.println("Erro ao buscar notas.");
+            e.printStackTrace();
         }
     }
 
@@ -62,18 +73,7 @@ public class Aluno extends Usuario {
 
             switch (opcao) {
                 case "1":
-                    for (Disciplina d : disciplinas) {
-                        System.out.println("\nDisciplina: " + d.getNome());
-                        System.out.println("Nota: " + d.getNota(this));
-                        System.out.println("Avisos:");
-                        if (d.getAvisos().isEmpty()) {
-                            System.out.println("- Nenhum aviso.");
-                        } else {
-                            for (String aviso : d.getAvisos()) {
-                                System.out.println("- " + aviso);
-                            }
-                        }
-                    }
+                    exibirDisciplinasEAvisos();
                     break;
                 case "2":
                     exibirPerfil();
@@ -84,7 +84,28 @@ public class Aluno extends Usuario {
                 case "0":
                     return;
                 default:
-                    System.out.println("Opção inválida.");
+                    System.out.println("❌ Opção inválida.");
+            }
+        }
+    }
+
+    private void exibirDisciplinasEAvisos() {
+        if (disciplinas.isEmpty()) {
+            System.out.println("📭 Nenhuma disciplina cadastrada.");
+            return;
+        }
+
+        for (Disciplina d : disciplinas) {
+            System.out.println("\n📘 Disciplina: " + d.getNome());
+            Double nota = d.getNota(this);
+            System.out.println("Nota: " + (nota != null ? nota : "Sem nota"));
+            System.out.println("Avisos:");
+            if (d.getAvisos().isEmpty()) {
+                System.out.println("- Nenhum aviso.");
+            } else {
+                for (String aviso : d.getAvisos()) {
+                    System.out.println("- " + aviso);
+                }
             }
         }
     }
@@ -98,8 +119,12 @@ public class Aluno extends Usuario {
         System.out.println("Email: " + email);
         System.out.println("Data de Nascimento: " + dataNascimento);
         System.out.println("Disciplinas:");
-        for (Disciplina d : disciplinas) {
-            System.out.println("- " + d.getNome());
+        if (disciplinas.isEmpty()) {
+            System.out.println("- Nenhuma disciplina cadastrada.");
+        } else {
+            for (Disciplina d : disciplinas) {
+                System.out.println("- " + d.getNome());
+            }
         }
     }
 }
