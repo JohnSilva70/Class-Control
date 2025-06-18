@@ -1,0 +1,590 @@
+package sistema;
+
+import sistema.UsuarioDAO;
+import javax.swing.*;
+import java.awt.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.text.SimpleDateFormat;
+import java.sql.DriverManager;
+
+public class MenuPrincipal extends JFrame {
+    private Usuario usuario;
+    private boolean isProfessor;
+
+    // Modelos e componentes usados em várias abas
+    private DefaultListModel<String> modeloAvisos;
+    private JList<String> listaAvisos;
+    private JComboBox<String> comboDisciplinasAviso;
+
+    private ArrayList<Disciplina> disciplinas = new ArrayList<>();
+    private ArrayList<Aluno> alunos = new ArrayList<>();
+
+    // Componentes da aba Notas que precisam ser atualizados
+    private JComboBox<String> comboDisciplinasNotas;
+    private DefaultListModel<String> modeloNotas;
+    private JList<String> listaNotas;
+
+    // Componentes da aba Matrícula
+    private DefaultListModel<String> modeloAlunosMatricula;
+    private JList<String> listaAlunosMatricula;
+    private DefaultListModel<String> modeloDisciplinasMatricula;
+    private JList<String> listaDisciplinasMatricula;
+
+    public MenuPrincipal(Usuario usuario) {
+        this.usuario = usuario;
+        this.isProfessor = usuario instanceof Professor;
+
+        try {
+            UsuarioDAO dao = new UsuarioDAO();
+            disciplinas = (ArrayList<Disciplina>) dao.buscarTodasDisciplinas(); // preenche disciplinas a partir do banco
+            alunos = UsuarioDAO.buscarAlunos(); // preenche alunos a partir do banco
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Erro ao carregar dados do banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+        }
+        setTitle("Menu Principal");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(800, 450);
+        setLocationRelativeTo(null);
+
+        UIManager.put("Button.font", new Font("SansSerif", Font.BOLD, 13));
+        UIManager.put("Label.font", new Font("SansSerif", Font.PLAIN, 13));
+        UIManager.put("TextField.font", new Font("SansSerif", Font.PLAIN, 13));
+        UIManager.put("List.font", new Font("SansSerif", Font.PLAIN, 13));
+
+        JPanel painelPrincipal = new JPanel(new BorderLayout());
+        painelPrincipal.add(criarPainelAvisos(), BorderLayout.WEST);
+        painelPrincipal.add(criarPainelAbas(), BorderLayout.CENTER);
+
+        add(painelPrincipal);
+        setVisible(true);
+    }
+
+    private JPanel criarPainelAvisos() {
+        JPanel painelAvisos = new JPanel(new BorderLayout());
+        painelAvisos.setPreferredSize(new Dimension(300, 0));
+        painelAvisos.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        painelAvisos.setBackground(new Color(245, 245, 245));
+
+        JLabel titulo = new JLabel("📢 Avisos");
+        titulo.setFont(new Font("SansSerif", Font.BOLD, 16));
+        painelAvisos.add(titulo, BorderLayout.NORTH);
+
+        modeloAvisos = new DefaultListModel<>();
+        listaAvisos = new JList<>(modeloAvisos);
+        listaAvisos.setBackground(Color.WHITE);
+        listaAvisos.setFixedCellHeight(25);
+        painelAvisos.add(new JScrollPane(listaAvisos), BorderLayout.CENTER);
+
+        atualizarModeloAvisos();
+
+        if (isProfessor) {
+            JPanel painelInferior = new JPanel(new BorderLayout());
+            painelInferior.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
+
+            JTextField campoTitulo = new JTextField("Título do Aviso");
+            JTextField campoAviso = new JTextField();
+            comboDisciplinasAviso = new JComboBox<>();
+            atualizarComboDisciplinasAviso();
+
+            JButton botaoAdicionar = new JButton("➕");
+            botaoAdicionar.setBackground(new Color(60, 120, 180));
+            botaoAdicionar.setForeground(Color.WHITE);
+            botaoAdicionar.setFocusPainted(false);
+
+            botaoAdicionar.addActionListener(e -> {
+                String tituloAviso = campoTitulo.getText().trim();
+                String texto = campoAviso.getText().trim();
+                String disciplinaNome = (String) comboDisciplinasAviso.getSelectedItem();
+
+                if (!tituloAviso.isEmpty() && !texto.isEmpty() && disciplinaNome != null) {
+                    try {
+                        Aviso aviso = new Aviso(tituloAviso, texto, usuario.getNome()); // ou usuario.getLogin(), conforme seu construtor
+
+                        Aviso.adicionarAviso(aviso, usuario, disciplinaNome); // <- CORRETO AGORA
+
+                        atualizarModeloAvisos();
+                        campoTitulo.setText("");
+                        campoAviso.setText("");
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                        JOptionPane.showMessageDialog(null, "Erro ao adicionar aviso.");
+                    }
+                }
+
+            });
+
+            JPanel painelSuperior = new JPanel(new GridLayout(3, 1, 5, 5));
+            painelSuperior.add(comboDisciplinasAviso);
+            painelSuperior.add(campoTitulo);
+            painelSuperior.add(campoAviso);
+
+            painelInferior.add(painelSuperior, BorderLayout.CENTER);
+            painelInferior.add(botaoAdicionar, BorderLayout.EAST);
+            painelAvisos.add(painelInferior, BorderLayout.SOUTH);
+        }
+
+        return painelAvisos;
+    }
+
+    private void atualizarComboDisciplinasAviso() {
+        if (comboDisciplinasAviso != null) {
+            comboDisciplinasAviso.removeAllItems();
+
+            String sql = "SELECT nome FROM disciplinas";
+            try (Connection con = ConexaoDB.getConnection();
+                 PreparedStatement stmt = con.prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+
+                while (rs.next()) {
+                    String nome = rs.getString("nome");
+                    comboDisciplinasAviso.addItem(nome);
+                }
+
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(null, "Erro ao carregar disciplinas.");
+            }
+        }
+    }
+
+
+    private void atualizarModeloAvisos() {
+        modeloAvisos.clear();
+
+        try (Connection con = ConexaoDB.getConnection()) {
+            PreparedStatement stmt;
+
+            if (isProfessor) {
+                stmt = con.prepareStatement(
+                        "SELECT d.nome, a.titulo, a.texto FROM avisos a " +
+                                "JOIN disciplinas d ON a.disciplina_id = d.id " +
+                                "WHERE a.autor_id = (SELECT id FROM usuarios WHERE login = ?)"
+                );
+                stmt.setString(1, usuario.getLogin());
+            } else {
+                stmt = con.prepareStatement(
+                        "SELECT d.nome, a.titulo, a.texto FROM avisos a " +
+                                "JOIN disciplinas d ON a.disciplina_id = d.id " +
+                                "JOIN matriculas m ON m.disciplina_id = d.id " +
+                                "JOIN alunos al ON al.usuario_id = m.aluno_id " +
+                                "JOIN usuarios u ON u.id = al.usuario_id " +
+                                "WHERE u.login = ?"
+                );
+                stmt.setString(1, usuario.getLogin());
+            }
+
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                String disciplina = rs.getString("nome");
+                String titulo = rs.getString("titulo");
+                String texto = rs.getString("texto");
+                modeloAvisos.addElement("[" + disciplina + "] " + titulo + ": " + texto);
+            }
+
+            stmt.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Erro ao carregar avisos.");
+        }
+    }
+
+
+    private JTabbedPane criarPainelAbas() {
+        JTabbedPane abas = new JTabbedPane();
+        abas.setFont(new Font("SansSerif", Font.BOLD, 13));
+        abas.addTab("👤 Perfil", criarAbaPerfil());
+        abas.addTab("📝 Notas", criarAbaNotas());
+        abas.addTab("📚 Disciplinas", criarAbaDisciplinas());
+        abas.addTab("📋 Matrícula", criarAbaMatricula());
+        return abas;
+    }
+
+    private JPanel criarAbaPerfil() {
+        JPanel painel = new JPanel();
+        painel.setLayout(new BoxLayout(painel, BoxLayout.Y_AXIS));
+        painel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        painel.add(new JLabel("Nome: " + usuario.getNome()));
+        painel.add(Box.createVerticalStrut(10));
+        painel.add(new JLabel("Login: " + usuario.getLogin()));
+        painel.add(Box.createVerticalStrut(10));
+        painel.add(new JLabel("E-mail: " + usuario.getEmail()));
+        painel.add(Box.createVerticalStrut(10));
+        painel.add(new JLabel("Data de Nascimento: " + usuario.getDataNascimento()));
+        painel.add(Box.createVerticalStrut(10));
+        painel.add(new JLabel("Tipo: " + (isProfessor ? "Professor" : "Aluno")));
+
+        JButton botaoEditarPerfil = new JButton("Editar Perfil");
+        botaoEditarPerfil.addActionListener(e -> abrirEditorPerfil());
+        painel.add(Box.createVerticalStrut(10));
+        painel.add(botaoEditarPerfil);
+
+        JButton botaoLogout = new JButton("Logout");
+        botaoLogout.addActionListener(e -> {
+            dispose();
+            TelaLogin.main(null);
+        });
+        painel.add(Box.createVerticalStrut(20));
+        painel.add(botaoLogout);
+
+        return painel;
+    }
+
+    public void abrirEditorPerfil() {
+        JDialog dialog = new JDialog(this, "Editar Perfil", true);
+        dialog.setSize(400, 300);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new GridLayout(6, 2, 10, 10));
+
+        JTextField campoNome = new JTextField(usuario.getNome());
+        JTextField campoEmail = new JTextField(usuario.getEmail());
+        JTextField campoNascimento = new JTextField(usuario.getDataNascimento());
+
+        dialog.add(new JLabel("Nome:"));
+        dialog.add(campoNome);
+        dialog.add(new JLabel("Email:"));
+        dialog.add(campoEmail);
+        dialog.add(new JLabel("Data de Nascimento:"));
+        dialog.add(campoNascimento);
+
+        JButton botaoSalvar = new JButton("Salvar");
+        JButton botaoCancelar = new JButton("Cancelar");
+
+
+        botaoSalvar.addActionListener(e -> {
+            try {
+                String nome = campoNome.getText().trim();
+                String email = campoEmail.getText().trim();
+                String dataTexto = campoNascimento.getText().trim(); // formato esperado: dd/MM/yyyy
+
+                SimpleDateFormat formatoEntrada = new SimpleDateFormat("dd/MM/yyyy");
+                formatoEntrada.setLenient(false); // valida datas como 31/02/2025
+                java.util.Date dataUtil = formatoEntrada.parse(dataTexto);
+
+                SimpleDateFormat formatoSaida =new SimpleDateFormat("yyyy-MM-dd");
+                String dataFormada = formatoSaida.format(dataUtil);
+
+
+                // Define os dados no objeto usuario
+                usuario.setNome(nome);
+                usuario.setEmail(email);
+                usuario.setDataNascimento(dataFormada); // salva como String no formato compatível com SQL
+
+                // Atualiza no banco
+                UsuarioDAO.atualizarUsuario(usuario);
+
+                JOptionPane.showMessageDialog(this, "Perfil atualizado com sucesso.");
+                dialog.dispose();
+                dispose();
+                new MenuPrincipal(usuario);
+
+            } catch (ParseException ex) {
+                JOptionPane.showMessageDialog(this, "❌ Data inválida. Use o formato dd/MM/yyyy", "Erro", JOptionPane.ERROR_MESSAGE);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "Erro ao atualizar perfil: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+
+
+        botaoCancelar.addActionListener(e -> dialog.dispose());
+
+        dialog.add(botaoSalvar);
+        dialog.add(botaoCancelar);
+        dialog.setVisible(true);
+    }
+
+    private JPanel criarAbaNotas() {
+        JPanel painel = new JPanel(new BorderLayout());
+
+        modeloNotas = new DefaultListModel<>();
+        listaNotas = new JList<>(modeloNotas);
+        painel.add(new JScrollPane(listaNotas), BorderLayout.CENTER);
+
+        if (isProfessor) {
+            JPanel painelAdicionar = new JPanel();
+
+            JTextField campoNota = new JTextField(5);
+            JComboBox<String> comboAlunos = new JComboBox<>();
+            for (Aluno a : alunos) comboAlunos.addItem(a.getNome());
+
+            comboDisciplinasNotas = new JComboBox<>();
+            atualizarComboDisciplinasNotas();
+
+            JButton botaoAddNota = new JButton("Adicionar Nota");
+            botaoAddNota.addActionListener(e -> {
+                try {
+                    String alunoNome = (String) comboAlunos.getSelectedItem();
+                    String disciplinaNome = (String) comboDisciplinasNotas.getSelectedItem();
+                    double nota = Double.parseDouble(campoNota.getText().trim());
+                    if (nota < 0 || nota > 10) throw new NumberFormatException();
+
+                    Aluno aluno = buscarAlunoPorNome(alunoNome);
+                    Disciplina d = buscarDisciplinaPorNome(disciplinaNome);
+                    if (aluno != null && d != null) {
+
+                        // Adiciona nota localmente (GUI)
+                        d.adicionarNota(aluno, nota);
+                        modeloNotas.addElement("[" + d.getNome() + "] " + aluno.getNome() + ": Nota " + nota);
+                        campoNota.setText("");
+
+                        // Salva nota no banco de dados
+                        try {
+                            if (!UsuarioDAO.alunoMatriculado(aluno.getLogin(),disciplinaNome)){
+                                UsuarioDAO.addAlunoDisciplina(aluno, disciplinaNome);
+                            }
+                            UsuarioDAO.adicionarNota(aluno,disciplinaNome, nota);
+                            JOptionPane.showMessageDialog(painel, "Nota adicionada com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+
+                        } catch (SQLException ex) {
+                            ex.printStackTrace();
+                            JOptionPane.showMessageDialog(painel, "Erro ao salvar nota no banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }
+                } catch (NumberFormatException ex) {
+                    JOptionPane.showMessageDialog(painel, "Nota inválida (0-10)", "Erro", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+
+            painelAdicionar.add(new JLabel("Aluno:"));
+            painelAdicionar.add(comboAlunos);
+            painelAdicionar.add(new JLabel("Disciplina:"));
+            painelAdicionar.add(comboDisciplinasNotas);
+            painelAdicionar.add(new JLabel("Nota:"));
+            painelAdicionar.add(campoNota);
+            painelAdicionar.add(botaoAddNota);
+
+            painel.add(painelAdicionar, BorderLayout.SOUTH);
+        } else {
+            try {
+                UsuarioDAO.mostrarNotasDoAluno(usuario, modeloNotas);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(null, "Erro ao buscar notas do aluno no banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+
+
+        return painel;
+    }
+
+    // Atualiza o combo de disciplinas da aba Notas (usado quando a lista muda)
+    private void atualizarComboDisciplinasNotas() {
+        if (comboDisciplinasNotas != null) {
+            comboDisciplinasNotas.removeAllItems();
+            UsuarioDAO dao = new UsuarioDAO();
+            try {
+                List<Disciplina> disciplinasBanco = dao.buscarTodasDisciplinas();
+                for (Disciplina d : disciplinasBanco) {
+                    comboDisciplinasNotas.addItem(d.getNome());
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, "Erro ao carregar disciplinas do banco.", "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+
+    private JPanel criarAbaDisciplinas() {
+        JPanel painel = new JPanel(new BorderLayout());
+        DefaultListModel<String> modelo = new DefaultListModel<>();
+        JList<String> lista = new JList<>(modelo);
+
+        UsuarioDAO dao = new UsuarioDAO();
+
+        if (isProfessor) {
+            try {
+                List<Disciplina> disciplinasBanco = dao.buscarTodasDisciplinas();
+                for (Disciplina d : disciplinasBanco) {
+                    modelo.addElement(d.getNome() + " (" + d.getCodigo() + ")");
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, "Erro ao carregar disciplinas do banco.", "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+
+            JButton botaoAdicionar = new JButton("Adicionar Disciplina");
+            botaoAdicionar.addActionListener(e -> {
+                JTextField campoNome = new JTextField();
+                JTextField campoCodigo = new JTextField();
+
+                JPanel painelDialogo = new JPanel(new GridLayout(2, 2));
+                painelDialogo.add(new JLabel("Nome da Disciplina:"));
+                painelDialogo.add(campoNome);
+                painelDialogo.add(new JLabel("Código:"));
+                painelDialogo.add(campoCodigo);
+
+                int resultado = JOptionPane.showConfirmDialog(this, painelDialogo, "Nova Disciplina", JOptionPane.OK_CANCEL_OPTION);
+                if (resultado == JOptionPane.OK_OPTION) {
+                    String nome = campoNome.getText().trim();
+                    String codigo = campoCodigo.getText().trim();
+
+                    if (!nome.isEmpty() && !codigo.isEmpty()) {
+                        try {
+                            dao.adicionarDisciplina(codigo, nome);
+                            modelo.addElement(nome + " (" + codigo + ")");
+
+                            // Atualiza combos e listas das outras abas
+                            atualizarComboDisciplinasAviso();
+                            atualizarComboDisciplinasNotas();
+                            atualizarListaDisciplinasMatricula();
+
+                            JOptionPane.showMessageDialog(this, "Disciplina adicionada com sucesso!");
+                        } catch (SQLException ex) {
+                            ex.printStackTrace();
+                            JOptionPane.showMessageDialog(this, "Erro ao adicionar disciplina ao banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } else {
+                        JOptionPane.showMessageDialog(this, "Preencha todos os campos.", "Erro", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            });
+
+            painel.add(botaoAdicionar, BorderLayout.SOUTH);
+        } else {
+            try {
+                UsuarioDAO.mostrarDisciplinasDoAluno(usuario, modelo);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(null, "Erro ao buscar disciplinas do aluno no banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+
+
+        painel.add(new JScrollPane(lista), BorderLayout.CENTER);
+        return painel;
+    }
+
+
+    private JPanel criarAbaMatricula() {
+        JPanel painel = new JPanel(new BorderLayout());
+
+        if (!isProfessor) {
+            JLabel label = new JLabel("Área de matrícula disponível apenas para professores.");
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            painel.add(label, BorderLayout.CENTER);
+            return painel;
+        }
+
+        modeloAlunosMatricula = new DefaultListModel<>();
+        listaAlunosMatricula = new JList<>(modeloAlunosMatricula);
+        for (Aluno a : alunos) modeloAlunosMatricula.addElement(a.getNome());
+
+        modeloDisciplinasMatricula = new DefaultListModel<>();
+        listaDisciplinasMatricula = new JList<>(modeloDisciplinasMatricula);
+        for (Disciplina d : disciplinas) modeloDisciplinasMatricula.addElement(d.getNome());
+
+        JButton botaoMatricular = new JButton("Matricular");
+        botaoMatricular.addActionListener(e -> {
+            int idxAluno = listaAlunosMatricula.getSelectedIndex();
+            int idxDisc = listaDisciplinasMatricula.getSelectedIndex();
+
+            if (idxAluno != -1 && idxDisc != -1) {
+                Aluno a = alunos.get(idxAluno);
+                Disciplina d = disciplinas.get(idxDisc);
+
+                if (!a.getDisciplinas().contains(d)) {
+                    try {
+                        // Chamada ao banco
+                        // Supondo que você tenha uma instância da classe onde está o método
+                        // ou que ele seja estático (adapte conforme seu projeto):
+                        // Exemplo com método estático:
+                        UsuarioDAO dao = new UsuarioDAO();
+                        dao.addAlunoDisciplina(a, d.getNome(  ));
+
+
+                        JOptionPane.showMessageDialog(this, "Aluno matriculado com sucesso!");
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                        JOptionPane.showMessageDialog(this, "Erro ao matricular aluno no banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(this, "Aluno já está matriculado nesta disciplina.");
+                }
+            }
+        });
+
+
+        JPanel painelListas = new JPanel(new GridLayout(1, 2, 10, 10));
+        painelListas.add(new JScrollPane(listaAlunosMatricula));
+        painelListas.add(new JScrollPane(listaDisciplinasMatricula));
+
+        painel.add(painelListas, BorderLayout.CENTER);
+        painel.add(botaoMatricular, BorderLayout.SOUTH);
+
+        return painel;
+    }
+
+    // Atualiza lista de disciplinas da aba Matrícula
+    private void atualizarListaDisciplinasMatricula() {
+        if (modeloDisciplinasMatricula != null) {
+            modeloDisciplinasMatricula.clear();
+            disciplinas.clear(); // Atualiza também a lista local para sincronizar com o banco
+
+            String sql = "SELECT nome, codigo FROM disciplinas";
+            try (Connection con = ConexaoDB.getConnection();
+                 PreparedStatement stmt = con.prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+
+                while (rs.next()) {
+                    String nome = rs.getString("nome");
+                    String codigo = rs.getString("codigo");
+
+                    // Atualiza o modelo da interface
+                    modeloDisciplinasMatricula.addElement(nome);
+
+                    // Atualiza a lista local de disciplinas para manter sincronização
+                    disciplinas.add(new Disciplina(nome, codigo));
+                }
+
+            } catch (SQLException e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(null, "Erro ao carregar disciplinas do banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+
+    private Disciplina buscarDisciplinaPorNome(String nome) {
+        String sql = "SELECT codigo FROM disciplinas WHERE nome = ?";
+        try (Connection con = ConexaoDB.getConnection();
+             PreparedStatement stmt = con.prepareStatement(sql)) {
+
+            stmt.setString(1, nome);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    String codigo = rs.getString("codigo");
+                    return new Disciplina(nome, codigo);
+                }
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "Erro ao buscar disciplina no banco de dados.", "Erro", JOptionPane.ERROR_MESSAGE);
+        }
+        return null;
+    }
+
+    private Aluno buscarAlunoPorNome(String nome) {
+        for (Aluno a : alunos) {
+            if (a.getNome().equals(nome)) return a;
+        }
+        return null;
+    }
+
+    public static void main(String[] args) {
+        Usuario u = new Professor("Ana", "ana", "123", "ana@example.com", "01/01/1980");
+        SwingUtilities.invokeLater(() -> new MenuPrincipal(u));
+    }
+}
